@@ -1,0 +1,3 @@
+cargo:rerun-if-changed=build.rs
+cargo:rustc-check-cfg=cfg(wbg_diagnostic)
+cargo:rustc-check-cfg=cfg(wbg_reference_types)
