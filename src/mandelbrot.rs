@@ -7,13 +7,14 @@ pub fn draw_mandelbrot_scene(
     height: f64,
     pan_x: f64,
     pan_y: f64,
+    zoom: f64,
     elapsed_ms: f64,
 ) {
     let w = width.max(1.0) as u32;
     let h = height.max(1.0) as u32;
 
     let mut pixels = vec![0u8; (w * h * 4) as usize];
-    let scale = 3.0 / width.min(height).max(1.0);
+    let scale = 3.0 / (width.min(height).max(1.0) * zoom.max(0.01));
     let center_x = -0.5 - pan_x * scale;
     let center_y = 0.0 - pan_y * scale;
     let max_iter = (12.0 + (elapsed_ms / 28.0)).min(160.0) as i32;

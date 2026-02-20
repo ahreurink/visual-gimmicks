@@ -21,6 +21,7 @@ features = [
   "CssStyleDeclaration",
   "ImageData",
   "PointerEvent",
+  "WheelEvent",
   "Performance",
   "console",
 ]

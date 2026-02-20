@@ -2,7 +2,9 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlElement, PointerEvent, Window};
+use web_sys::{
+    CanvasRenderingContext2d, HtmlCanvasElement, HtmlElement, PointerEvent, WheelEvent, Window,
+};
 
 use crate::h_fractal;
 use crate::mandelbrot;
@@ -54,10 +56,12 @@ pub fn start() -> Result<(), JsValue> {
         pointer_down_cb: None,
         pointer_move_cb: None,
         pointer_up_cb: None,
+        wheel_cb: None,
         paused: false,
         mode: DrawMode::Spiral,
         pan_x: 0.0,
         pan_y: 0.0,
+        zoom: 1.0,
         drag_active: false,
         last_x: 0.0,
         last_y: 0.0,
@@ -100,6 +104,8 @@ pub fn start() -> Result<(), JsValue> {
                 state.paused = false;
                 state.start_time = 0.0;
                 state.mode = DrawMode::Mandelbrot;
+                state.pan_x = 0.0;
+                state.pan_y = 0.0;
             }
         }) as Box<dyn FnMut()>);
         let _ = mandelbrot_button.add_event_listener_with_callback(
@@ -181,6 +187,22 @@ pub fn start() -> Result<(), JsValue> {
             .add_event_listener_with_callback("pointercancel", cb.as_ref().unchecked_ref());
         state.borrow_mut().pointer_up_cb = Some(cb);
     }
+    {
+        let weak_state: Weak<RefCell<State>> = Rc::downgrade(&state);
+        let cb = Closure::wrap(Box::new(move |event: WheelEvent| {
+            if let Some(state_rc) = weak_state.upgrade() {
+                event.prevent_default();
+                let mut state = state_rc.borrow_mut();
+                let factor = (-event.delta_y() * 0.001).exp();
+                state.zoom = (state.zoom * factor).clamp(0.2, 20.0);
+            }
+        }) as Box<dyn FnMut(WheelEvent)>);
+        let _ = state
+            .borrow()
+            .canvas
+            .add_event_listener_with_callback("wheel", cb.as_ref().unchecked_ref());
+        state.borrow_mut().wheel_cb = Some(cb);
+    }
 
     STATE.with(|slot| {
         *slot.borrow_mut() = Some(state);
@@ -201,10 +223,12 @@ struct State {
     pointer_down_cb: Option<Closure<dyn FnMut(PointerEvent)>>,
     pointer_move_cb: Option<Closure<dyn FnMut(PointerEvent)>>,
     pointer_up_cb: Option<Closure<dyn FnMut(PointerEvent)>>,
+    wheel_cb: Option<Closure<dyn FnMut(WheelEvent)>>,
     paused: bool,
     mode: DrawMode,
     pan_x: f64,
     pan_y: f64,
+    zoom: f64,
     drag_active: bool,
     last_x: f64,
     last_y: f64,
@@ -251,7 +275,7 @@ impl State {
 
     fn draw(&mut self, elapsed_ms: f64) {
         resize_canvas(&self.window, &self.canvas, &self.ctx);
-        let (width, height) = logical_size(&self.window);
+        let (width, height) = logical_size(&self.window, &self.canvas);
         let cx = width / 2.0;
         let cy = height / 2.0;
 
@@ -266,12 +290,18 @@ impl State {
             DrawMode::Spiral => {
                 ctx.save();
                 let _ = ctx.translate(self.pan_x, self.pan_y);
+                let _ = ctx.translate(cx, cy);
+                let _ = ctx.scale(self.zoom, self.zoom);
+                let _ = ctx.translate(-cx, -cy);
                 spiral::draw_spiral(ctx, cx, cy, width, height, elapsed_ms);
                 let _ = ctx.restore();
             }
             DrawMode::HTree => {
                 ctx.save();
                 let _ = ctx.translate(self.pan_x, self.pan_y);
+                let _ = ctx.translate(cx, cy);
+                let _ = ctx.scale(self.zoom, self.zoom);
+                let _ = ctx.translate(-cx, -cy);
                 h_fractal::draw_h_tree_scene(ctx, cx, cy, width, height, elapsed_ms);
                 let _ = ctx.restore();
             }
@@ -282,6 +312,7 @@ impl State {
                     height,
                     self.pan_x,
                     self.pan_y,
+                    self.zoom,
                     elapsed_ms,
                 );
             }
@@ -289,23 +320,29 @@ impl State {
     }
 }
 
-fn logical_size(window: &Window) -> (f64, f64) {
-    let width = window
+fn logical_size(window: &Window, canvas: &HtmlCanvasElement) -> (f64, f64) {
+    let width = canvas.client_width() as f64;
+    let height = canvas.client_height() as f64;
+    if width > 0.0 && height > 0.0 {
+        return (width, height);
+    }
+
+    let fallback_width = window
         .inner_width()
         .ok()
         .and_then(|v| v.as_f64())
         .unwrap_or(800.0);
-    let height = window
+    let fallback_height = window
         .inner_height()
         .ok()
         .and_then(|v| v.as_f64())
         .unwrap_or(600.0);
-    (width, height)
+    (fallback_width, fallback_height)
 }
 
 fn resize_canvas(window: &Window, canvas: &HtmlCanvasElement, ctx: &CanvasRenderingContext2d) {
     let dpr = window.device_pixel_ratio();
-    let (width, height) = logical_size(window);
+    let (width, height) = logical_size(window, canvas);
 
     canvas.set_width((width * dpr) as u32);
     canvas.set_height((height * dpr) as u32);
