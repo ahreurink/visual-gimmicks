@@ -20,6 +20,10 @@ pub fn start() -> Result<(), JsValue> {
         .get_element_by_id("restart")
         .ok_or("missing restart button")?
         .dyn_into::<HtmlElement>()?;
+    let fractal_button = document
+        .get_element_by_id("fractal")
+        .ok_or("missing fractal button")?
+        .dyn_into::<HtmlElement>()?;
     let clear_button = document
         .get_element_by_id("clear")
         .ok_or("missing clear button")?
@@ -38,7 +42,9 @@ pub fn start() -> Result<(), JsValue> {
         raf_cb: None,
         click_cb: None,
         clear_cb: None,
+        fractal_cb: None,
         paused: false,
+        mode: DrawMode::Spiral,
     }));
 
     State::request_frame(&state);
@@ -49,6 +55,7 @@ pub fn start() -> Result<(), JsValue> {
                 let mut state = state_rc.borrow_mut();
                 state.paused = false;
                 state.start_time = 0.0;
+                state.mode = DrawMode::Spiral;
             }
         }) as Box<dyn FnMut()>);
         let _ = restart_button.add_event_listener_with_callback(
@@ -56,6 +63,22 @@ pub fn start() -> Result<(), JsValue> {
             cb.as_ref().unchecked_ref(),
         );
         state.borrow_mut().click_cb = Some(cb);
+    }
+    {
+        let weak_state: Weak<RefCell<State>> = Rc::downgrade(&state);
+        let cb = Closure::wrap(Box::new(move || {
+            if let Some(state_rc) = weak_state.upgrade() {
+                let mut state = state_rc.borrow_mut();
+                state.paused = false;
+                state.start_time = 0.0;
+                state.mode = DrawMode::HTree;
+            }
+        }) as Box<dyn FnMut()>);
+        let _ = fractal_button.add_event_listener_with_callback(
+            "click",
+            cb.as_ref().unchecked_ref(),
+        );
+        state.borrow_mut().fractal_cb = Some(cb);
     }
     {
         let weak_state: Weak<RefCell<State>> = Rc::downgrade(&state);
@@ -85,7 +108,15 @@ struct State {
     raf_cb: Option<Closure<dyn FnMut(f64)>>,
     click_cb: Option<Closure<dyn FnMut()>>,
     clear_cb: Option<Closure<dyn FnMut()>>,
+    fractal_cb: Option<Closure<dyn FnMut()>>,
     paused: bool,
+    mode: DrawMode,
+}
+
+#[derive(Copy, Clone)]
+enum DrawMode {
+    Spiral,
+    HTree,
 }
 
 impl State {
@@ -133,39 +164,81 @@ impl State {
             return;
         }
 
-        let max_t = 80.0 * std::f64::consts::PI;
-        let duration = 4200.0;
-        let progress = (elapsed_ms / duration).min(1.0);
-        let t_end = max_t * progress;
+        match self.mode {
+            DrawMode::Spiral => {
+                let max_t = 80.0 * std::f64::consts::PI;
+                let duration = 4200.0;
+                let progress = (elapsed_ms / duration).min(1.0);
+                let t_end = max_t * progress;
 
-        let a = 2.2;
-        let b = 4.2;
-        let max_r = (a + b * max_t).max(1.0);
-        let scale = 0.45 * width.min(height) / max_r;
+                let a = 2.2;
+                let b = 4.2;
+                let max_r = (a + b * max_t).max(1.0);
+                let scale = 0.45 * width.min(height) / max_r;
 
-        let mut t = 0.0;
-        let dt = 0.08;
-        while t < t_end {
-            let t2 = (t + dt).min(t_end);
-            let r1 = a + b * t;
-            let r2 = a + b * t2;
-            let x1 = cx + scale * r1 * t.cos();
-            let y1 = cy + scale * r1 * t.sin();
-            let x2 = cx + scale * r2 * t2.cos();
-            let y2 = cy + scale * r2 * t2.sin();
+                let mut t = 0.0;
+                let dt = 0.08;
+                while t < t_end {
+                    let t2 = (t + dt).min(t_end);
+                    let r1 = a + b * t;
+                    let r2 = a + b * t2;
+                    let x1 = cx + scale * r1 * t.cos();
+                    let y1 = cy + scale * r1 * t.sin();
+                    let x2 = cx + scale * r2 * t2.cos();
+                    let y2 = cy + scale * r2 * t2.sin();
 
-            let hue = (t / max_t) * 360.0;
-            let color = format!("hsl({:.0}, 95%, 60%)", hue);
-            ctx.set_stroke_style(&JsValue::from_str(&color));
-            ctx.set_line_width(2.2);
-            ctx.begin_path();
-            ctx.move_to(x1, y1);
-            ctx.line_to(x2, y2);
-            ctx.stroke();
+                    let hue = (t / max_t) * 360.0;
+                    let color = format!("hsl({:.0}, 95%, 60%)", hue);
+                    ctx.set_stroke_style(&JsValue::from_str(&color));
+                    ctx.set_line_width(2.2);
+                    ctx.begin_path();
+                    ctx.move_to(x1, y1);
+                    ctx.line_to(x2, y2);
+                    ctx.stroke();
 
-            t = t2;
+                    t = t2;
+                }
+            }
+            DrawMode::HTree => {
+                let base = 0.55 * width.min(height);
+                let depth = ((elapsed_ms / 500.0).floor() as i32).clamp(0, 6);
+                ctx.set_stroke_style(&JsValue::from_str("#e9e1ff"));
+                ctx.set_line_width(2.0);
+                draw_h_tree(ctx, cx, cy, base, depth);
+            }
         }
     }
+}
+
+fn draw_h_tree(ctx: &CanvasRenderingContext2d, x: f64, y: f64, len: f64, depth: i32) {
+    if depth < 0 || len < 2.0 {
+        return;
+    }
+
+    let half = len / 2.0;
+    let x0 = x - half;
+    let x1 = x + half;
+    let y0 = y - half;
+    let y1 = y + half;
+
+    ctx.begin_path();
+    ctx.move_to(x0, y0);
+    ctx.line_to(x0, y1);
+    ctx.move_to(x1, y0);
+    ctx.line_to(x1, y1);
+    ctx.move_to(x0, y);
+    ctx.line_to(x1, y);
+    ctx.stroke();
+
+    if depth == 0 {
+        return;
+    }
+
+    let next = len / 2.0;
+    draw_h_tree(ctx, x0, y0, next, depth - 1);
+    draw_h_tree(ctx, x0, y1, next, depth - 1);
+    draw_h_tree(ctx, x1, y0, next, depth - 1);
+    draw_h_tree(ctx, x1, y1, next, depth - 1);
 }
 
 fn logical_size(window: &Window) -> (f64, f64) {
