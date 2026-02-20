@@ -5,6 +5,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlElement, PointerEvent, Window};
 
 use crate::h_fractal;
+use crate::mandelbrot;
 use crate::spiral;
 
 thread_local! {
@@ -26,6 +27,10 @@ pub fn start() -> Result<(), JsValue> {
         .get_element_by_id("fractal")
         .ok_or("missing fractal button")?
         .dyn_into::<HtmlElement>()?;
+    let mandelbrot_button = document
+        .get_element_by_id("mandelbrot")
+        .ok_or("missing mandelbrot button")?
+        .dyn_into::<HtmlElement>()?;
     let clear_button = document
         .get_element_by_id("clear")
         .ok_or("missing clear button")?
@@ -45,6 +50,7 @@ pub fn start() -> Result<(), JsValue> {
         click_cb: None,
         clear_cb: None,
         fractal_cb: None,
+        mandelbrot_cb: None,
         pointer_down_cb: None,
         pointer_move_cb: None,
         pointer_up_cb: None,
@@ -85,6 +91,22 @@ pub fn start() -> Result<(), JsValue> {
         let _ =
             fractal_button.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref());
         state.borrow_mut().fractal_cb = Some(cb);
+    }
+    {
+        let weak_state: Weak<RefCell<State>> = Rc::downgrade(&state);
+        let cb = Closure::wrap(Box::new(move || {
+            if let Some(state_rc) = weak_state.upgrade() {
+                let mut state = state_rc.borrow_mut();
+                state.paused = false;
+                state.start_time = 0.0;
+                state.mode = DrawMode::Mandelbrot;
+            }
+        }) as Box<dyn FnMut()>);
+        let _ = mandelbrot_button.add_event_listener_with_callback(
+            "click",
+            cb.as_ref().unchecked_ref(),
+        );
+        state.borrow_mut().mandelbrot_cb = Some(cb);
     }
     {
         let weak_state: Weak<RefCell<State>> = Rc::downgrade(&state);
@@ -175,6 +197,7 @@ struct State {
     click_cb: Option<Closure<dyn FnMut()>>,
     clear_cb: Option<Closure<dyn FnMut()>>,
     fractal_cb: Option<Closure<dyn FnMut()>>,
+    mandelbrot_cb: Option<Closure<dyn FnMut()>>,
     pointer_down_cb: Option<Closure<dyn FnMut(PointerEvent)>>,
     pointer_move_cb: Option<Closure<dyn FnMut(PointerEvent)>>,
     pointer_up_cb: Option<Closure<dyn FnMut(PointerEvent)>>,
@@ -191,6 +214,7 @@ struct State {
 enum DrawMode {
     Spiral,
     HTree,
+    Mandelbrot,
 }
 
 impl State {
@@ -238,13 +262,30 @@ impl State {
             return;
         }
 
-        ctx.save();
-        let _ = ctx.translate(self.pan_x, self.pan_y);
         match self.mode {
-            DrawMode::Spiral => spiral::draw_spiral(ctx, cx, cy, width, height, elapsed_ms),
-            DrawMode::HTree => h_fractal::draw_h_tree_scene(ctx, cx, cy, width, height, elapsed_ms),
+            DrawMode::Spiral => {
+                ctx.save();
+                let _ = ctx.translate(self.pan_x, self.pan_y);
+                spiral::draw_spiral(ctx, cx, cy, width, height, elapsed_ms);
+                let _ = ctx.restore();
+            }
+            DrawMode::HTree => {
+                ctx.save();
+                let _ = ctx.translate(self.pan_x, self.pan_y);
+                h_fractal::draw_h_tree_scene(ctx, cx, cy, width, height, elapsed_ms);
+                let _ = ctx.restore();
+            }
+            DrawMode::Mandelbrot => {
+                mandelbrot::draw_mandelbrot_scene(
+                    ctx,
+                    width,
+                    height,
+                    self.pan_x,
+                    self.pan_y,
+                    elapsed_ms,
+                );
+            }
         }
-        let _ = ctx.restore();
     }
 }
 

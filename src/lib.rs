@@ -1,5 +1,6 @@
 mod app;
 mod h_fractal;
+mod mandelbrot;
 mod spiral;
 
 use wasm_bindgen::prelude::*;

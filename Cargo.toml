@@ -19,6 +19,7 @@ features = [
   "CanvasRenderingContext2d",
   "Element",
   "CssStyleDeclaration",
+  "ImageData",
   "PointerEvent",
   "Performance",
   "console",
