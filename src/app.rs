@@ -120,6 +120,9 @@ pub fn start() -> Result<(), JsValue> {
             if let Some(state_rc) = weak_state.upgrade() {
                 let mut state = state_rc.borrow_mut();
                 state.paused = true;
+                state.start_time = 0.0;
+                state.pan_x = 0.0;
+                state.pan_y = 0.0;
             }
         }) as Box<dyn FnMut()>);
         let _ = clear_button.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref());
@@ -306,12 +309,15 @@ impl State {
                 let _ = ctx.restore();
             }
             DrawMode::Mandelbrot => {
+                let pixel_width = self.canvas.width() as f64;
+                let pixel_height = self.canvas.height() as f64;
+                let dpr = self.window.device_pixel_ratio();
                 mandelbrot::draw_mandelbrot_scene(
                     ctx,
-                    width,
-                    height,
-                    self.pan_x,
-                    self.pan_y,
+                    pixel_width,
+                    pixel_height,
+                    self.pan_x * dpr,
+                    self.pan_y * dpr,
                     self.zoom,
                     elapsed_ms,
                 );
