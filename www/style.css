@@ -10,6 +10,7 @@ html,
 body {
   margin: 0;
   height: 100%;
+  width: 100%;
   background: #0b0b0f;
   overflow: hidden;
 }
@@ -17,4 +18,16 @@ body {
 canvas {
   display: block;
   touch-action: none;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
 }
