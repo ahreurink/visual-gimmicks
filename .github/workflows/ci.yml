@@ -40,7 +40,7 @@ jobs:
         run: cargo install wasm-pack --locked
 
       - name: Build wasm
-        run: wasm-pack build --target web
+        run: wasm-pack build --target web --out-dir www/pkg
 
       - name: Run tests
         run: cargo test
@@ -53,9 +53,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
           rm -rf _site
-          mkdir -p _site
-          cp -r www/. _site/
-          cp -r pkg _site/pkg
+          cp -r www _site
 
       - name: Upload Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
